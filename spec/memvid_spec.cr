@@ -23,6 +23,41 @@ describe Memvid do
       [true, false].should contain(result)
     end
   end
+
+  describe ".verify" do
+    it "verifies a valid memory file" do
+      temp_path = File.tempname("memvid_verify_test", ".mv2")
+      begin
+        Memvid::Memory.create(temp_path) do |mem|
+          mem.put("Content for verification test")
+          mem.commit
+        end
+
+        report = Memvid.verify(temp_path)
+        report.file_path.should eq(temp_path)
+        report.passed?.should be_true
+        report.overall_status.should eq(Memvid::VerificationStatus::Passed)
+        report.checks.should_not be_empty
+      ensure
+        File.delete(temp_path) if File.exists?(temp_path)
+      end
+    end
+
+    it "supports deep verification" do
+      temp_path = File.tempname("memvid_verify_deep_test", ".mv2")
+      begin
+        Memvid::Memory.create(temp_path) do |mem|
+          mem.put("Content for deep verification")
+          mem.commit
+        end
+
+        report = Memvid.verify(temp_path, deep: true)
+        report.passed?.should be_true
+      ensure
+        File.delete(temp_path) if File.exists?(temp_path)
+      end
+    end
+  end
 end
 
 describe Memvid::Memory do
@@ -182,6 +217,121 @@ describe Memvid::Memory do
 
       expect_raises(Memvid::Error) do
         mem.put("Should fail")
+      end
+    end
+  end
+
+  describe "#frame" do
+    it "returns frame metadata by ID" do
+      Memvid::Memory.create(temp_path) do |mem|
+        options = Memvid::PutOptions.new(
+          title: "Test Frame",
+          uri: "test://frame1"
+        )
+        mem.put("Frame content here", options)
+        mem.commit
+
+        # Frame IDs are 0-indexed
+        frame = mem.frame(0_u64)
+        frame.id.should eq(0)
+        frame.title.should eq("Test Frame")
+        frame.uri.should eq("test://frame1")
+        frame.status.should eq("Active")
+      end
+    end
+
+    it "raises FrameNotFoundError for invalid ID" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.commit
+        expect_raises(Memvid::FrameNotFoundError) do
+          mem.frame(999_u64)
+        end
+      end
+    end
+  end
+
+  describe "#frame_by_uri" do
+    it "returns frame metadata by URI" do
+      Memvid::Memory.create(temp_path) do |mem|
+        options = Memvid::PutOptions.new(
+          title: "URI Test",
+          uri: "test://unique-uri"
+        )
+        mem.put("Content for URI test", options)
+        mem.commit
+
+        frame = mem.frame_by_uri("test://unique-uri")
+        frame.title.should eq("URI Test")
+        frame.uri.should eq("test://unique-uri")
+      end
+    end
+
+    it "raises FrameNotFoundError for unknown URI" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.commit
+        expect_raises(Memvid::FrameNotFoundError) do
+          mem.frame_by_uri("test://nonexistent")
+        end
+      end
+    end
+  end
+
+  describe "#frame_content" do
+    it "returns frame text content" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.put("This is the frame content.")
+        mem.commit
+
+        content = mem.frame_content(0_u64)
+        content.should contain("This is the frame content.")
+      end
+    end
+  end
+
+  describe "#delete_frame" do
+    it "soft-deletes a frame and returns WAL sequence" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.put("Content to delete")
+        mem.commit
+
+        seq = mem.delete_frame(0_u64)
+        seq.should be > 0
+
+        # Commit the deletion
+        mem.commit
+
+        # After deletion and commit, active frame count should be 0
+        stats = mem.stats
+        stats.active_frame_count.should eq(0)
+      end
+    end
+  end
+
+  describe "#timeline" do
+    it "returns timeline entries" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.put("First entry")
+        mem.put("Second entry")
+        mem.put("Third entry")
+        mem.commit
+
+        response = mem.timeline
+        response.count.should eq(3)
+        response.entries.size.should eq(3)
+        response.entries.first.frame_id.should eq(0)
+      end
+    end
+
+    it "accepts TimelineQuery parameters" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.put("Entry 1")
+        mem.put("Entry 2")
+        mem.put("Entry 3")
+        mem.commit
+
+        query = Memvid::TimelineQuery.new(limit: 2_u64, reverse: true)
+        response = mem.timeline(query)
+        response.entries.size.should eq(2)
       end
     end
   end

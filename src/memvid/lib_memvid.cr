@@ -146,6 +146,45 @@ lib LibMemvid
   fun stats = memvid_stats(handle : Handle, stats : Stats*, error : Error*) : Int32
   fun frame_count = memvid_frame_count(handle : Handle, error : Error*) : UInt64
 
+  # Frame retrieval
+  fun frame_by_id = memvid_frame_by_id(
+    handle : Handle,
+    frame_id : UInt64,
+    error : Error*
+  ) : LibC::Char*
+
+  fun frame_by_uri = memvid_frame_by_uri(
+    handle : Handle,
+    uri : LibC::Char*,
+    error : Error*
+  ) : LibC::Char*
+
+  fun frame_content = memvid_frame_content(
+    handle : Handle,
+    frame_id : UInt64,
+    error : Error*
+  ) : LibC::Char*
+
+  fun delete_frame = memvid_delete_frame(
+    handle : Handle,
+    frame_id : UInt64,
+    error : Error*
+  ) : UInt64
+
+  # Timeline
+  fun timeline = memvid_timeline(
+    handle : Handle,
+    query_json : LibC::Char*,
+    error : Error*
+  ) : LibC::Char*
+
+  # Verification (static function - no handle required)
+  fun verify = memvid_verify(
+    path : LibC::Char*,
+    deep : Int32,
+    error : Error*
+  ) : LibC::Char*
+
   # Memory management
   fun error_free = memvid_error_free(error : Error*) : Void
 end

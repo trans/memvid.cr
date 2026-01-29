@@ -63,6 +63,25 @@ module Memvid
     features.includes?(LibMemvid::Features::Clip)
   end
 
+  # Verify file integrity without opening it.
+  #
+  # Returns a `VerificationReport` with the results.
+  def self.verify(path : String, deep : Bool = false) : VerificationReport
+    error = LibMemvid::Error.new
+    result_ptr = LibMemvid.verify(path, deep ? 1 : 0, pointerof(error))
+
+    if result_ptr.null?
+      Memory.raise_error(error)
+    end
+
+    begin
+      result_json = String.new(result_ptr)
+      VerificationReport.from_json(result_json)
+    ensure
+      LibMemvid.string_free(result_ptr)
+    end
+  end
+
   # Base exception for all Memvid errors.
   class Error < Exception
     getter code : LibMemvid::ErrorCode
@@ -89,6 +108,123 @@ module Memvid
 
   # Raised when JSON parsing fails.
   class JSONParseError < Error; end
+
+  # Frame metadata.
+  class Frame
+    include JSON::Serializable
+
+    property id : UInt64
+    property timestamp : Int64
+    property kind : String?
+    property uri : String?
+    property title : String?
+    property status : String
+    property payload_length : UInt64
+    property tags : Array(String)
+    property labels : Array(String)
+    property parent_id : UInt64?
+    property chunk_index : UInt32?
+    property chunk_count : UInt32?
+  end
+
+  # Timeline query parameters.
+  class TimelineQuery
+    include JSON::Serializable
+
+    property limit : UInt64? = nil
+    property since : Int64? = nil
+    property until : Int64? = nil
+    property reverse : Bool = false
+
+    def initialize(
+      @limit = nil,
+      @since = nil,
+      @until = nil,
+      @reverse = false
+    )
+    end
+  end
+
+  # A timeline entry (frame summary).
+  class TimelineEntry
+    include JSON::Serializable
+
+    property frame_id : UInt64
+    property timestamp : Int64
+    property preview : String
+    property uri : String?
+    property child_frames : Array(UInt64)
+  end
+
+  # Timeline query response.
+  class TimelineResponse
+    include JSON::Serializable
+
+    property entries : Array(TimelineEntry)
+    property count : Int32
+  end
+
+  # Verification status.
+  enum VerificationStatus
+    Passed
+    Failed
+    Skipped
+
+    def self.from_json_string(str : String) : self
+      case str
+      when "passed"  then Passed
+      when "failed"  then Failed
+      when "skipped" then Skipped
+      else raise "Unknown verification status: #{str}"
+      end
+    end
+  end
+
+  # A single verification check result.
+  class VerificationCheck
+    include JSON::Serializable
+
+    property name : String
+    @[JSON::Field(converter: Memvid::VerificationStatusConverter)]
+    property status : VerificationStatus
+    property details : String?
+  end
+
+  # Converter for VerificationStatus from JSON string.
+  module VerificationStatusConverter
+    def self.from_json(parser : JSON::PullParser) : VerificationStatus
+      VerificationStatus.from_json_string(parser.read_string)
+    end
+
+    def self.to_json(value : VerificationStatus, builder : JSON::Builder) : Nil
+      builder.string(value.to_s.downcase)
+    end
+  end
+
+  # Verification report.
+  class VerificationReport
+    include JSON::Serializable
+
+    property file_path : String
+    @[JSON::Field(key: "overall_status", converter: Memvid::VerificationStatusConverter)]
+    property overall_status : VerificationStatus
+    property checks : Array(VerificationCheck)
+
+    # Returns true if verification passed.
+    def passed? : Bool
+      overall_status.passed?
+    end
+
+    # Returns true if verification failed.
+    def failed? : Bool
+      overall_status.failed?
+    end
+
+    # Returns checks that failed.
+    def failed_checks : Array(VerificationCheck)
+      checks.select(&.status.failed?)
+    end
+  end
 
   # Options for `Memory#put`.
   class PutOptions
@@ -402,6 +538,105 @@ module Memvid
       end
 
       count
+    end
+
+    # Gets frame metadata by ID.
+    #
+    # Raises `FrameNotFoundError` if the frame does not exist.
+    def frame(id : UInt64) : Frame
+      check_closed!
+      error = LibMemvid::Error.new
+      result_ptr = LibMemvid.frame_by_id(@handle, id, pointerof(error))
+
+      if result_ptr.null?
+        Memory.raise_error(error)
+      end
+
+      begin
+        result_json = String.new(result_ptr)
+        Frame.from_json(result_json)
+      ensure
+        LibMemvid.string_free(result_ptr)
+      end
+    end
+
+    # Gets frame metadata by URI.
+    #
+    # Raises `FrameNotFoundError` if no frame with the given URI exists.
+    def frame_by_uri(uri : String) : Frame
+      check_closed!
+      error = LibMemvid::Error.new
+      result_ptr = LibMemvid.frame_by_uri(@handle, uri, pointerof(error))
+
+      if result_ptr.null?
+        Memory.raise_error(error)
+      end
+
+      begin
+        result_json = String.new(result_ptr)
+        Frame.from_json(result_json)
+      ensure
+        LibMemvid.string_free(result_ptr)
+      end
+    end
+
+    # Gets the text content of a frame by ID.
+    #
+    # Raises `FrameNotFoundError` if the frame does not exist.
+    def frame_content(id : UInt64) : String
+      check_closed!
+      error = LibMemvid::Error.new
+      result_ptr = LibMemvid.frame_content(@handle, id, pointerof(error))
+
+      if result_ptr.null?
+        Memory.raise_error(error)
+      end
+
+      begin
+        String.new(result_ptr)
+      ensure
+        LibMemvid.string_free(result_ptr)
+      end
+    end
+
+    # Soft-deletes a frame.
+    #
+    # The frame data is not immediately removed; a tombstone entry is created.
+    # Returns the WAL sequence number.
+    #
+    # Raises `FrameNotFoundError` if the frame does not exist.
+    def delete_frame(id : UInt64) : UInt64
+      check_closed!
+      error = LibMemvid::Error.new
+      seq = LibMemvid.delete_frame(@handle, id, pointerof(error))
+
+      if seq == 0 && error.code != LibMemvid::ErrorCode::Ok
+        Memory.raise_error(error)
+      end
+
+      seq
+    end
+
+    # Queries the timeline (chronological frame list).
+    #
+    # Returns frames in chronological order (or reverse if specified).
+    def timeline(query : TimelineQuery? = nil) : TimelineResponse
+      check_closed!
+      error = LibMemvid::Error.new
+      json = query.try(&.to_json)
+
+      result_ptr = LibMemvid.timeline(@handle, json, pointerof(error))
+
+      if result_ptr.null?
+        Memory.raise_error(error)
+      end
+
+      begin
+        result_json = String.new(result_ptr)
+        TimelineResponse.from_json(result_json)
+      ensure
+        LibMemvid.string_free(result_ptr)
+      end
     end
 
     # Returns true if the memory has been closed.
