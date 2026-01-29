@@ -82,6 +82,65 @@ module Memvid
     end
   end
 
+  # Run doctor diagnostics and optionally repair a memory file.
+  #
+  # The file should NOT be open when running doctor.
+  def self.doctor(path : String, options : DoctorOptions? = nil) : DoctorReport
+    error = LibMemvid::Error.new
+    json = options.try(&.to_json)
+
+    result_ptr = LibMemvid.doctor(path, json, pointerof(error))
+
+    if result_ptr.null?
+      Memory.raise_error(error)
+    end
+
+    begin
+      result_json = String.new(result_ptr)
+      DoctorReport.from_json(result_json)
+    ensure
+      LibMemvid.string_free(result_ptr)
+    end
+  end
+
+  # Create a doctor repair plan without executing it.
+  def self.doctor_plan(path : String, options : DoctorOptions? = nil) : DoctorPlan
+    error = LibMemvid::Error.new
+    json = options.try(&.to_json)
+
+    result_ptr = LibMemvid.doctor_plan(path, json, pointerof(error))
+
+    if result_ptr.null?
+      Memory.raise_error(error)
+    end
+
+    begin
+      result_json = String.new(result_ptr)
+      DoctorPlan.from_json(result_json)
+    ensure
+      LibMemvid.string_free(result_ptr)
+    end
+  end
+
+  # Apply a previously created doctor plan.
+  def self.doctor_apply(path : String, plan : DoctorPlan) : DoctorReport
+    error = LibMemvid::Error.new
+    plan_json = plan.to_json
+
+    result_ptr = LibMemvid.doctor_apply(path, plan_json, pointerof(error))
+
+    if result_ptr.null?
+      Memory.raise_error(error)
+    end
+
+    begin
+      result_json = String.new(result_ptr)
+      DoctorReport.from_json(result_json)
+    ensure
+      LibMemvid.string_free(result_ptr)
+    end
+  end
+
   # Base exception for all Memvid errors.
   class Error < Exception
     getter code : LibMemvid::ErrorCode
@@ -223,6 +282,188 @@ module Memvid
     # Returns checks that failed.
     def failed_checks : Array(VerificationCheck)
       checks.select(&.status.failed?)
+    end
+  end
+
+  # Doctor options.
+  class DoctorOptions
+    include JSON::Serializable
+
+    property rebuild_time_index : Bool = false
+    property rebuild_lex_index : Bool = false
+    property rebuild_vec_index : Bool = false
+    property vacuum : Bool = false
+    property dry_run : Bool = false
+    property quiet : Bool = false
+
+    def initialize(
+      @rebuild_time_index = false,
+      @rebuild_lex_index = false,
+      @rebuild_vec_index = false,
+      @vacuum = false,
+      @dry_run = false,
+      @quiet = false
+    )
+    end
+  end
+
+  # Doctor status.
+  enum DoctorStatus
+    Clean
+    Healed
+    Partial
+    Failed
+    PlanOnly
+  end
+
+  # Doctor severity.
+  enum DoctorSeverity
+    Info
+    Warning
+    Error
+  end
+
+  # Doctor finding (detected issue).
+  class DoctorFinding
+    include JSON::Serializable
+
+    property code : String
+    property severity : DoctorSeverity
+    property message : String
+    property detail : String?
+  end
+
+  # Doctor phase kind.
+  enum DoctorPhaseKind
+    Probe
+    HeaderHealing
+    WalReplay
+    IndexRebuild
+    Vacuum
+    Finalize
+    Verify
+  end
+
+  # Doctor action kind.
+  enum DoctorActionKind
+    HealHeaderPointer
+    HealTocChecksum
+    ReplayWal
+    DiscardWal
+    RebuildTimeIndex
+    RebuildLexIndex
+    RebuildVecIndex
+    VacuumCompaction
+    RecomputeToc
+    UpdateHeader
+    DeepVerify
+    NoOp
+  end
+
+  # Doctor action plan.
+  class DoctorActionPlan
+    include JSON::Serializable
+
+    property action : DoctorActionKind
+    property required : Bool = false
+    property reasons : Array(String) = [] of String
+    property note : String?
+  end
+
+  # Doctor phase plan.
+  class DoctorPhasePlan
+    include JSON::Serializable
+
+    property phase : DoctorPhaseKind
+    property actions : Array(DoctorActionPlan) = [] of DoctorActionPlan
+  end
+
+  # Doctor plan.
+  class DoctorPlan
+    include JSON::Serializable
+
+    property version : UInt32
+    property file_path : String
+    property options : DoctorOptions
+    property findings : Array(DoctorFinding) = [] of DoctorFinding
+    property phases : Array(DoctorPhasePlan) = [] of DoctorPhasePlan
+
+    # Returns true if the plan has no actionable repairs.
+    def noop? : Bool
+      phases.all? do |phase|
+        phase.actions.all? do |action|
+          action.action.deep_verify? || action.action.no_op?
+        end
+      end
+    end
+  end
+
+  # Doctor metrics.
+  class DoctorMetrics
+    include JSON::Serializable
+
+    property total_duration_ms : UInt64 = 0
+    property actions_completed : Int32 = 0
+    property actions_skipped : Int32 = 0
+  end
+
+  # Doctor phase status.
+  enum DoctorPhaseStatus
+    Skipped
+    Executed
+    Failed
+  end
+
+  # Doctor action status.
+  enum DoctorActionStatus
+    Skipped
+    Executed
+    Failed
+  end
+
+  # Doctor action report.
+  class DoctorActionReport
+    include JSON::Serializable
+
+    property action : DoctorActionKind
+    property status : DoctorActionStatus
+    property detail : String?
+  end
+
+  # Doctor phase report.
+  class DoctorPhaseReport
+    include JSON::Serializable
+
+    property phase : DoctorPhaseKind
+    property status : DoctorPhaseStatus
+    property actions : Array(DoctorActionReport) = [] of DoctorActionReport
+    property duration_ms : UInt64?
+  end
+
+  # Doctor report.
+  class DoctorReport
+    include JSON::Serializable
+
+    property plan : DoctorPlan
+    property status : DoctorStatus
+    property phases : Array(DoctorPhaseReport) = [] of DoctorPhaseReport
+    property findings : Array(DoctorFinding) = [] of DoctorFinding
+    property metrics : DoctorMetrics
+    property verification : VerificationReport?
+
+    # Returns true if the file is clean (no repairs needed).
+    def clean? : Bool
+      status.clean?
+    end
+
+    # Returns true if repairs were successfully applied.
+    def healed? : Bool
+      status.healed?
+    end
+
+    # Returns true if the doctor failed.
+    def failed? : Bool
+      status.failed?
     end
   end
 

@@ -1,73 +1,49 @@
 # TODO
 
-## Documentation
+## Completed
+
+- [x] Phase 1: Lifecycle, mutations, search, state queries
+- [x] Phase 2: Frame retrieval, timeline, verify
+- [x] Phase 3: RAG/ask API, Doctor (file repair)
+- [x] Comprehensive test suite (57 Crystal specs, 26 Rust FFI tests)
+
+## Future Enhancements
+
+### API Coverage
+
+- [ ] CLIP image embeddings (requires `clip` feature in memvid-core)
+- [ ] Vector search mode (requires `vec` feature)
+- [ ] Blob reader (raw binary data access)
+- [ ] Frame iteration / cursor API
+
+### Crystal Bindings
+
+- [ ] Add `Memory#each` iterator for frames
+- [ ] Add `Memory#[]` accessor for frame by ID
+- [ ] Consider lazy SearchResponse with pagination
+- [ ] Thread-safety wrapper option (Mutex-based)
+
+### Documentation
 
 - [ ] Expand README with installation instructions
 - [ ] Add usage examples for common workflows
 - [ ] Document library path setup (LIBRARY_PATH, LD_LIBRARY_PATH)
-- [ ] Add API documentation comments to all public methods
 
-## Installation & Distribution
+### Installation & Distribution
 
 - [ ] Create install script for libmemvid.so
 - [ ] Add Makefile or justfile for building FFI + Crystal together
 - [ ] Consider bundling prebuilt binaries for common platforms
 - [ ] Publish to shards.info once stable
 
-## API Coverage (Phase 2)
-
-The following memvid-core features are not yet exposed:
-
-- [ ] `get_frame(id)` - retrieve frame by ID
-- [ ] `get_frame_by_uri(uri)` - retrieve frame by URI
-- [ ] `delete_frame(id)` - soft delete a frame
-- [ ] `timeline(query)` - chronological queries
-- [ ] `verify(path, deep)` - file integrity verification
-- [ ] Frame iteration / cursor API
-- [ ] Encryption support (if enabled)
-
-## API Coverage (Phase 3)
-
-- [ ] `ask(query)` - RAG/LLM integration
-- [ ] CLIP image embeddings (if `clip` feature enabled)
-- [ ] Vector search mode (if `vec` feature enabled)
-- [ ] Memory cards / export
-- [ ] Doctor/repair functionality
-
-## Crystal Bindings
-
-- [ ] Add `Memory#each` iterator for frames
-- [ ] Add `Memory#[]` accessor for frame by ID
-- [ ] Consider lazy SearchResponse with pagination
-- [ ] Add logging/tracing integration
-- [ ] Thread-safety wrapper option (Mutex-based)
-
-## Testing
-
-- [ ] Add integration tests with larger datasets
-- [ ] Add benchmark suite
-- [ ] Test error conditions more thoroughly
-- [ ] Test with vec/clip features enabled
-- [ ] Memory leak detection tests
-
-## CI/CD
+### CI/CD
 
 - [ ] GitHub Actions workflow for Crystal specs
 - [ ] Automated libmemvid.so build in CI
 - [ ] Cross-platform testing (Linux, macOS)
-- [ ] Release automation
 
-## FFI Layer (memvid-ffi)
+### FFI Layer
 
-- [ ] Fix cbindgen for Rust 2024 `#[unsafe(no_mangle)]` syntax
-- [ ] Add `memvid_get_frame` function
-- [ ] Add `memvid_delete_frame` function
-- [ ] Add `memvid_timeline` function
-- [ ] Add `memvid_verify` function
-- [ ] Consider async/callback API for long operations
+- [ ] Fix `temporal_track` feature warnings
 - [ ] Add pkg-config file for easier linking
-
-## Upstream
-
-- [ ] Submit PR to memvid/memvid with FFI layer
-- [ ] Coordinate on API stability guarantees
+- [ ] Consider async/callback API for long operations

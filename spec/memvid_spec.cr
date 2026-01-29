@@ -58,6 +58,58 @@ describe Memvid do
       end
     end
   end
+
+  describe ".doctor" do
+    it "runs doctor on a valid memory file" do
+      temp_path = File.tempname("memvid_doctor_test", ".mv2")
+      begin
+        Memvid::Memory.create(temp_path) do |mem|
+          mem.put("Content for doctor test")
+          mem.commit
+        end
+
+        report = Memvid.doctor(temp_path)
+        report.clean?.should be_true
+        report.metrics.total_duration_ms.should be >= 0
+      ensure
+        File.delete(temp_path) if File.exists?(temp_path)
+      end
+    end
+
+    it "accepts DoctorOptions" do
+      temp_path = File.tempname("memvid_doctor_opts_test", ".mv2")
+      begin
+        Memvid::Memory.create(temp_path) do |mem|
+          mem.put("Content for doctor options test")
+          mem.commit
+        end
+
+        options = Memvid::DoctorOptions.new(quiet: true)
+        report = Memvid.doctor(temp_path, options)
+        report.should be_a(Memvid::DoctorReport)
+      ensure
+        File.delete(temp_path) if File.exists?(temp_path)
+      end
+    end
+  end
+
+  describe ".doctor_plan" do
+    it "creates a doctor plan" do
+      temp_path = File.tempname("memvid_doctor_plan_test", ".mv2")
+      begin
+        Memvid::Memory.create(temp_path) do |mem|
+          mem.put("Content for doctor plan test")
+          mem.commit
+        end
+
+        plan = Memvid.doctor_plan(temp_path)
+        plan.file_path.should eq(temp_path)
+        plan.version.should be > 0
+      ensure
+        File.delete(temp_path) if File.exists?(temp_path)
+      end
+    end
+  end
 end
 
 describe Memvid::Memory do

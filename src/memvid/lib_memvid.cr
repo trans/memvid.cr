@@ -192,6 +192,25 @@ lib LibMemvid
     error : Error*
   ) : LibC::Char*
 
+  # Doctor (file repair)
+  fun doctor = memvid_doctor(
+    path : LibC::Char*,
+    options_json : LibC::Char*,
+    error : Error*
+  ) : LibC::Char*
+
+  fun doctor_plan = memvid_doctor_plan(
+    path : LibC::Char*,
+    options_json : LibC::Char*,
+    error : Error*
+  ) : LibC::Char*
+
+  fun doctor_apply = memvid_doctor_apply(
+    path : LibC::Char*,
+    plan_json : LibC::Char*,
+    error : Error*
+  ) : LibC::Char*
+
   # Memory management
   fun error_free = memvid_error_free(error : Error*) : Void
 end
