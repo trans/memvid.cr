@@ -185,6 +185,13 @@ lib LibMemvid
     error : Error*
   ) : LibC::Char*
 
+  # RAG/Ask
+  fun ask = memvid_ask(
+    handle : Handle,
+    request_json : LibC::Char*,
+    error : Error*
+  ) : LibC::Char*
+
   # Memory management
   fun error_free = memvid_error_free(error : Error*) : Void
 end

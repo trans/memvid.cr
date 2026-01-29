@@ -335,6 +335,38 @@ describe Memvid::Memory do
       end
     end
   end
+
+  describe "#ask" do
+    it "retrieves context for a question" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.put("The capital of France is Paris. It has the Eiffel Tower.")
+        mem.put("Berlin is the capital of Germany.")
+        mem.put("Tokyo is the capital of Japan.")
+        mem.commit
+
+        response = mem.ask("What is the capital of France?")
+        response.question.should eq("What is the capital of France?")
+        response.context_only?.should be_true
+        response.stats.retrieval_ms.should be >= 0
+        response.retrieval.hits.should_not be_empty
+      end
+    end
+
+    it "accepts AskRequest for advanced queries" do
+      Memvid::Memory.create(temp_path) do |mem|
+        mem.put("Information about machine learning and AI.")
+        mem.commit
+
+        request = Memvid::AskRequest.new(
+          question: "What is machine learning?",
+          top_k: 5,
+          mode: Memvid::AskMode::Lex
+        )
+        response = mem.ask(request)
+        response.mode.should eq(Memvid::AskMode::Lex)
+      end
+    end
+  end
 end
 
 describe Memvid::PutOptions do

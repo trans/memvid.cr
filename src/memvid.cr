@@ -226,6 +226,156 @@ module Memvid
     end
   end
 
+  # Ask mode for RAG queries.
+  enum AskMode
+    Lex
+    Sem
+    Hybrid
+
+    def to_json(builder : JSON::Builder) : Nil
+      builder.string(to_s.downcase)
+    end
+  end
+
+  # Ask request parameters.
+  class AskRequest
+    include JSON::Serializable
+
+    property question : String
+    property top_k : Int32 = 10
+    property snippet_chars : Int32 = 200
+    property uri : String? = nil
+    property scope : String? = nil
+    property cursor : String? = nil
+    property start : Int64? = nil
+    @[JSON::Field(key: "end")]
+    property end_time : Int64? = nil
+    property context_only : Bool = true
+    property mode : AskMode = AskMode::Hybrid
+    property as_of_frame : UInt64? = nil
+    property as_of_ts : Int64? = nil
+
+    def initialize(
+      @question : String,
+      @top_k = 10,
+      @snippet_chars = 200,
+      @uri = nil,
+      @scope = nil,
+      @cursor = nil,
+      @start = nil,
+      @end_time = nil,
+      @context_only = true,
+      @mode = AskMode::Hybrid,
+      @as_of_frame = nil,
+      @as_of_ts = nil
+    )
+    end
+  end
+
+  # Ask retriever type.
+  enum AskRetriever
+    Lex
+    Semantic
+    Hybrid
+    LexFallback
+    TimelineFallback
+  end
+
+  # Ask performance statistics.
+  class AskStats
+    include JSON::Serializable
+
+    property retrieval_ms : UInt64
+    property synthesis_ms : UInt64
+    property latency_ms : UInt64
+  end
+
+  # Ask citation (reference to source).
+  class AskCitation
+    include JSON::Serializable
+
+    property index : Int32
+    property frame_id : UInt64
+    property uri : String
+    property chunk_range : Tuple(Int32, Int32)?
+    property score : Float32?
+  end
+
+  # Ask context fragment kind.
+  enum AskContextFragmentKind
+    Full
+    Summary
+  end
+
+  # Ask context fragment (retrieved chunk).
+  class AskContextFragment
+    include JSON::Serializable
+
+    property rank : Int32
+    property frame_id : UInt64
+    property uri : String
+    property title : String?
+    property score : Float32?
+    property matches : Int32
+    property range : Tuple(Int32, Int32)?
+    property chunk_range : Tuple(Int32, Int32)?
+    property text : String
+    property kind : AskContextFragmentKind?
+  end
+
+  # Search hit within ask retrieval results.
+  class AskSearchHit
+    include JSON::Serializable
+
+    property rank : Int32
+    property frame_id : UInt64
+    property uri : String
+    property title : String?
+    property range : Tuple(Int32, Int32)
+    property text : String
+    property matches : Int32
+    property chunk_range : Tuple(Int32, Int32)?
+    property chunk_text : String?
+    property score : Float32?
+  end
+
+  # Search response within ask results.
+  class AskSearchResponse
+    include JSON::Serializable
+
+    property query : String
+    property elapsed_ms : UInt64
+    property total_hits : Int32
+    property hits : Array(AskSearchHit)
+    property context : String
+    property next_cursor : String?
+  end
+
+  # Ask response.
+  class AskResponse
+    include JSON::Serializable
+
+    property question : String
+    property mode : AskMode
+    property retriever : AskRetriever
+    property context_only : Bool
+    property retrieval : AskSearchResponse
+    property answer : String?
+    property citations : Array(AskCitation)
+    property context_fragments : Array(AskContextFragment)
+    property stats : AskStats
+
+    # Returns the concatenated context from retrieval.
+    def context : String
+      retrieval.context
+    end
+
+    # Returns true if this was a context-only request (no LLM synthesis).
+    def context_only? : Bool
+      context_only
+    end
+  end
+
   # Options for `Memory#put`.
   class PutOptions
     include JSON::Serializable
@@ -634,6 +784,34 @@ module Memvid
       begin
         result_json = String.new(result_ptr)
         TimelineResponse.from_json(result_json)
+      ensure
+        LibMemvid.string_free(result_ptr)
+      end
+    end
+
+    # Ask a question using RAG (Retrieval-Augmented Generation).
+    #
+    # This is a convenience method that creates an AskRequest with defaults.
+    # Returns retrieved context; answer synthesis requires an external LLM.
+    def ask(question : String, top_k : Int32 = 10) : AskResponse
+      ask(AskRequest.new(question: question, top_k: top_k))
+    end
+
+    # Ask a question with full request parameters.
+    def ask(request : AskRequest) : AskResponse
+      check_closed!
+      error = LibMemvid::Error.new
+      json = request.to_json
+
+      result_ptr = LibMemvid.ask(@handle, json, pointerof(error))
+
+      if result_ptr.null?
+        Memory.raise_error(error)
+      end
+
+      begin
+        result_json = String.new(result_ptr)
+        AskResponse.from_json(result_json)
       ensure
         LibMemvid.string_free(result_ptr)
       end
