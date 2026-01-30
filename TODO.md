@@ -15,6 +15,12 @@
 - [ ] Vector search mode (requires `vec` feature)
 - [ ] Blob reader (raw binary data access)
 - [ ] Frame iteration / cursor API
+- [ ] Sessions API (start, end, replay for time-travel debugging)
+- [ ] Models API (install, list, remove local models)
+
+### Integration
+
+- [ ] OpenAI tool definitions (`openai_tools` method) - revisit for IPCK integration
 
 ### Crystal Bindings
 
